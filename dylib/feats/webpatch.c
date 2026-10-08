@@ -301,7 +301,7 @@ static const np_gate_t g_gates_forcetool[] = {
       "!s.local_per_client_data?.installed&&"
       "s.most_available_per_client_data?.is_invalid_os_type&&(0,n.jsx)(U,{})", 1 },
     { "(0,h.we)(\"#GameList_Entry_Invalid_OSType2\")",
-      "\"Enable CrossOver under Properties > Compatibility to install and run "
+      "\"Enable NotProton under Properties > Compatibility to install and run "
       "the Windows version.\"", 1 },
 };
 
@@ -334,7 +334,7 @@ static const np_gate_t g_gates_selecttool[] = {
       NP_C1 ".most_available_per_client_data?.is_invalid_os_type&&"
       "(0," NP_C2 ".jsx)(" NP_C3 ",{})", 1 },
     { "(0," NP_C1 ".we)(\"#GameList_Entry_Invalid_OSType2\")",
-      "\"Enable CrossOver under Properties > Compatibility to install and run "
+      "\"Enable NotProton under Properties > Compatibility to install and run "
       "the Windows version.\"", 1 },
 };
 

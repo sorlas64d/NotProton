@@ -70,9 +70,12 @@ dobby_commit="$(sed -n 's/^ *DOBBY_COMMIT: *"\([0-9a-f]*\)".*/\1/p' .github/work
 if [ ! -d vendor/dobby/.git ]; then
     git clone --no-checkout https://github.com/jmpews/Dobby.git vendor/dobby
 fi
-if [ "$(git -C vendor/dobby rev-parse HEAD 2>/dev/null || true)" != "$dobby_commit" ]; then
+# The clone is --no-checkout, so HEAD can already equal the pinned commit while the working
+# tree is still empty; check for the files as well as the commit.
+if [ "$(git -C vendor/dobby rev-parse HEAD 2>/dev/null || true)" != "$dobby_commit" ] ||
+   [ ! -f vendor/dobby/CMakeLists.txt ]; then
     git -C vendor/dobby fetch --quiet origin
-    git -C vendor/dobby checkout --quiet "$dobby_commit"
+    git -C vendor/dobby checkout --quiet --force "$dobby_commit"
 fi
 if [ ! -f build/dobby/libdobby.a ]; then
     make dobby

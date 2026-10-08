@@ -12,7 +12,6 @@ you only need one of the two.
 - Games talk to the macOS Steam client through Valve's Proton bridge, as in upstream NotProton.
 - Graphics through DXMT, D3DMetal or DXVK, chosen per game from Steam.
 
-Confirmed working: How to Fish, on macOS 27 with Sikarugir's `WS12WineSikarugir11.0` engine.
 
 > [!IMPORTANT]
 > There are no prebuilt downloads of this version. You build the app yourself, with one

@@ -40,10 +40,9 @@ you only need one of the two.
 
 **To build:**
 
-- [Xcode](https://apps.apple.com/app/xcode/id497799835), the full app. The Command Line Tools
-  alone are not enough.
+- [Xcode](https://apps.apple.com/app/xcode/id497799835)
 - [Homebrew](https://brew.sh)
-- About 10 GB of free space and an internet connection
+- About 10 GB of free space
 
 ## Installing
 
@@ -65,10 +64,6 @@ NotProton has set itself up (step 5).
 
 ### 2. Prepare Xcode and Homebrew
 
-Install Xcode, then accept its license and install its first-launch components. These commands
-call Xcode directly, so they work even when your active developer tools are the Command Line
-Tools:
-
 ```sh
 sudo /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -license accept
 sudo /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -runFirstLaunch
@@ -87,7 +82,7 @@ The script checks every prerequisite first and tells you how to fix anything mis
 builds everything in order. If it stops partway, fix what it reports and run it again; finished
 steps are skipped.
 
-The result is `out/NotProton.app`. Building changes nothing outside the `NotProton` folder.
+The result is `out/NotProton.app`. 
 
 ### 4. Install NotProton into Steam
 
@@ -133,7 +128,7 @@ Each game's **Properties > Compatibility** page has a **Graphics** option:
 
 | Option | What it uses | Notes |
 |--------|--------------|-------|
-| **Automatic** | DXMT | The default, and Sikarugir's default. Try this first. |
+| **Automatic** | DXMT | The default, and Sikarugir's default. |
 | **DXMT** | DirectX 10 and 11 translated to Metal | Supports DirectX 11.1. |
 | **D3DMetal** | Apple's DirectX 11 and 12 to Metal, from the Game Porting Toolkit | Try it when a game misbehaves on DXMT, or for DirectX 12 games. |
 | **DXVK** | DirectX 9 to 11 translated to Vulkan, then to Metal | Supports DirectX 11.0. |
@@ -144,12 +139,6 @@ The same page has a few switches:
 - **MSync:** faster thread synchronization. Turn it on if a game stutters or stalls under load.
 - **Metal HUD:** shows frame rate and frame times.
 - **High Resolution:** renders at full Retina resolution.
-
-### Expect some stutter at first
-
-Games often stutter the first time they show a new effect, area or menu, while the shaders are
-translated to Metal. macOS caches the results, so it settles as you play. If the stutter doesn't
-go away, try turning on MSync or switching the graphics option to D3DMetal.
 
 ## Troubleshooting
 
@@ -177,28 +166,6 @@ The app ID is the number in the game's Steam store URL.
 NotProton patches the Steam client and recognises the client builds it was made for. Upstream
 NotProton lists the client builds it supports in its own README below. A newer Steam may need a newer
 NotProton, which is why blocking Steam updates is recommended.
-
-## Updating
-
-**Don't accept update offers from inside the NotProton app.** The built-in updater checks the
-original project's releases. Accepting replaces this version with one that has no Sikarugir
-support.
-
-To update this version instead:
-
-```sh
-cd NotProton
-git fetch origin
-git reset --hard origin/sikarugir-runner
-./build-sikarugir-app.sh
-```
-
-This branch is regularly rebased onto the original project, so `git pull` can refuse to update it.
-`reset --hard` simply moves you to the latest version; it discards changes you made to files in the
-repository yourself.
-
-Then quit Steam, open the new `out/NotProton.app`, and click **Install** in the Steam section,
-which then reads "Update available".
 
 ## Uninstalling
 

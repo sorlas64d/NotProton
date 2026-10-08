@@ -1,4 +1,4 @@
-// Clones CrossOver, throws it in bridge, invokes ntdll patch,
+// Clones CrossOver or unpacks a Sikarugir engine, throws it in bridge, invokes ntdll patch,
 
 import Foundation
 
@@ -12,7 +12,7 @@ enum RunnerSetup {
 
         var label: String {
             switch self {
-            case .cloning: "Copying CrossOver"
+            case .cloning: "Copying the Wine runtime"
             case .staging: "Patching"
             case .patching: "Installing compatibility tool"
             case .finished: "Done"
@@ -38,6 +38,19 @@ enum RunnerSetup {
 
         report(.cloning)
         let build = try RunnerInstaller.clone(from: install, replacingExisting: replacingExisting)
+        return try prepare(build, report: report)
+    }
+
+    static func run(
+        sikarugir engine: SikarugirEngine,
+        frameworks: URL,
+        replacingExisting: Bool = false,
+        report: @Sendable (Phase) -> Void = { _ in }
+    ) throws -> Outcome {
+        report(.cloning)
+        let build = try RunnerInstaller.install(
+            sikarugir: engine, frameworks: frameworks, replacingExisting: replacingExisting
+        )
         return try prepare(build, report: report)
     }
 
@@ -67,9 +80,12 @@ enum RunnerSetup {
         }
 
         let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
-        let status = license(root)
-        guard status.licensed else {
-            throw StepFailure(step: "Verify CrossOver license", detail: status.detail)
+        // Sikarugir is free and carries no license to check.
+        if build.kind == .crossOver {
+            let status = license(root)
+            guard status.licensed else {
+                throw StepFailure(step: "Verify CrossOver license", detail: status.detail)
+            }
         }
 
         try verify(build, root)

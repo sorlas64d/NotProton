@@ -63,7 +63,7 @@ DEPS := $(OBJS:.o=.d)
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures panel-behavior app-tests \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
-        appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
+        appinfo helpers-install ntdll-resolve bridge bridge-sikarugir runcheck compatcheck \
         compatsvc-check scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launch-shell FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
@@ -503,6 +503,28 @@ bridge:
 	steam-shim/build.sh
 	@echo "==> Built the bridge, now run: $(MAKE) app-payload"
 
+# lsteamclient for the Sikarugir runner, whose engine is stock wine 11.0 rather than
+# CrossOver's 11.15. Rosetta only, so one x86_64 tree. steam.exe is the one `bridge`
+# builds: 11.0 cannot build it, and it only needs Win32 imports the engine has.
+WINE_SRC_SIK     := scratch/wine-11.0
+WINE_BUILD_SIK   := scratch/wine-build-sik110
+WINE_COMMIT_SIK  := db11d0fe6a169c457e23d007e20404643d067aa8
+
+bridge-sikarugir:
+	WINE_TAG=wine-11.0 WINE_COMMIT=$(WINE_COMMIT_SIK) WINE_SRC="$(CURDIR)/$(WINE_SRC_SIK)" \
+		WINE_BUILD="$(CURDIR)/$(WINE_BUILD_SIK)" \
+		REGISTER_DIFF="$(CURDIR)/bridge/register-components-11.0.diff" bridge/setup-wine-tree.sh
+	WINE_BUILD="$(CURDIR)/$(WINE_BUILD_SIK)" WINE_SRC_REL=../wine-11.0 \
+		UNIX_CXXFLAGS="-include string.h -include wchar.h" lsteamclient/build.sh
+	@echo "==> Built lsteamclient for Sikarugir in $(WINE_BUILD_SIK)/dlls/lsteamclient"
+
+# Optional in the app: without them it installs as before and only cannot set up a
+# Sikarugir runner, so a tree that never ran bridge-sikarugir still builds.
+BRIDGE_FILES_SIK := \
+	$(WINE_BUILD_SIK)/dlls/lsteamclient/x86_64-windows/lsteamclient.dll:sikarugir-x86_64-windows-lsteamclient.dll \
+	$(WINE_BUILD_SIK)/dlls/lsteamclient/lsteamclient.so:sikarugir-x86_64-unix-lsteamclient.so \
+	$(WINE_BUILD_SIK)/dlls/lsteamclient/i386-windows/lsteamclient.dll:sikarugir-i386-windows-lsteamclient.dll
+
 app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
 	@mkdir -p "$(APP_PAYLOAD)/signatures/macos.arm64"
 	@mkdir -p "$(APP_PAYLOAD)/bridge"
@@ -517,6 +539,12 @@ app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
 		if [ -f "$$src" ]; then cp -f "$$src" "$$dst"; \
 		elif [ -f "$$dst" ]; then echo "==> keeping staged $${spec##*:}"; \
 		else echo "$$src is missing and nothing is staged at $$dst, run: $(MAKE) bridge" >&2; exit 1; fi; \
+	done
+	@for spec in $(BRIDGE_FILES_SIK); do \
+		src="$${spec%%:*}"; dst="$(APP_PAYLOAD)/bridge/$${spec##*:}"; \
+		if [ -f "$$src" ]; then cp -f "$$src" "$$dst"; \
+		elif [ -f "$$dst" ]; then echo "==> keeping staged $${spec##*:}"; \
+		else echo "==> no $${spec##*:}, so the app cannot set up a Sikarugir runner ($(MAKE) bridge-sikarugir)"; fi; \
 	done
 	@stamp="$$(git log -1 --format=%ct 2>/dev/null)"; \
 	if [ -z "$$stamp" ]; then echo "build-time needs a git checkout" >&2; exit 1; fi; \

@@ -56,6 +56,51 @@ without_lock_fds() {
 
 # If two WINEDLLPATH directories have the same DLL, Wine uses the one listed first.
 export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix${WINEDLLPATH:+:$WINEDLLPATH}"
+
+# A runner with a Frameworks folder is a Sikarugir engine, which NotProton unpacks with a
+# copy of the Template's Frameworks inside it. RunnerKind.of(root:) draws the same line.
+runner_kind=crossover
+if [ -d "$CX_ROOT/Frameworks" ]; then
+  runner_kind=sikarugir
+  # The engine starts no child process without this, which Sikarugir's own launcher sets
+  export SikarugirAppWine11=1
+  # wineserver and the unix modules link against the Template's libraries
+  export DYLD_FALLBACK_LIBRARY_PATH="$CX_ROOT/Frameworks:/usr/local/lib:/usr/lib"
+
+  # The Graphics choice on the Compatibility page, as the engine takes it: each renderer's
+  # wine directory goes first in the search through its own variable. Without one, d3d11
+  # falls to wined3d on OpenGL 4.1, which offers no feature level 11 at all. DXMT is
+  # Sikarugir's own default, so Automatic is DXMT.
+  renderers="$CX_ROOT/Frameworks/renderer"
+  renderer="${CX_GRAPHICS_BACKEND:-dxmt}"
+  case "$renderer" in
+    d3dmetal)
+      export WINEDLLPATH_D3DMETAL="$renderers/d3dmetal/wine"
+      export WINEDLLPATH_PREPEND="$WINEDLLPATH_D3DMETAL"
+      export CX_APPLEGPT_LIBD3DSHARED_PATH="$renderers/d3dmetal/external/libd3dshared.dylib"
+      export CX_APPLEGPTK_LIBD3DSHARED_PATH="$CX_APPLEGPT_LIBD3DSHARED_PATH"
+      ;;
+    dxvk)
+      export WINEDLLPATH_DXVK="$renderers/dxvk/wine"
+      export WINEDLLPATH_PREPEND="$WINEDLLPATH_DXVK"
+      # The manifests name their driver relative to themselves, so they live in the runner
+      for icd in kosmickrisp_mesa_icd MoltenVK_icd; do
+        manifest="$CX_ROOT/Resources/vulkan/icd.d/$icd.json"
+        if [ -f "$manifest" ]; then
+          export VK_DRIVER_FILES="$manifest"
+          break
+        fi
+      done
+      ;;
+    wined3d) ;;
+    *)
+      renderer=dxmt
+      export WINEDLLPATH_DXMT="$renderers/dxmt/wine"
+      export WINEDLLPATH_PREPEND="$WINEDLLPATH_DXMT"
+      export DXMT_ALLOW_CROSS_PROCESS_SWAPCHAIN=1
+      ;;
+  esac
+fi
 export PATH="$CX_ROOT/bin:$PATH"
 
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
@@ -75,6 +120,7 @@ fi
   echo "STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID"
   echo "-- steam env passed through --"
   env | grep -iE '^(Steam|SDL_)' | sort
+  [ "$runner_kind" = sikarugir ] && echo "runner=sikarugir renderer=$renderer"
 } >> "$log" 2>&1 || true
 
 stage_step="startup"
@@ -914,6 +960,10 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
 fi
 
 bridge_src="$np_support/bridge"
+# lsteamclient has to match the runner's wine, and Sikarugir's 11.0 gets its own build
+lsteam_rel=""
+[ "$runner_kind" = sikarugir ] && lsteam_rel="sikarugir/"
+lsteam_src="$bridge_src/${lsteam_rel%/}"
 prefix_steam="$WINEPREFIX/drive_c/Program Files (x86)/Steam"
 verify_runner() {
   if [ ! -d "$bridge_src/wine/$np_build" ]; then
@@ -940,11 +990,11 @@ verify_runner() {
   done
 }
 install_lsteamclient_trigger() {
-  src="$bridge_src/i386-windows/lsteamclient.dll"
+  src="$lsteam_src/i386-windows/lsteamclient.dll"
   dst="$WINEPREFIX/drive_c/windows/syswow64/lsteamclient.dll"
   [ -f "$src" ] && [ -d "$WINEPREFIX/drive_c/windows/syswow64" ] || return 0
   cmp -s "$src" "$dst" && return 0
-  if place_bridge_file i386-windows/lsteamclient.dll "$dst"; then
+  if place_bridge_file "${lsteam_rel}i386-windows/lsteamclient.dll" "$dst"; then
     echo "=== installed syswow64 lsteamclient trigger ===" >> "$log" 2>&1 || true
   else
     echo "=== could not copy i386-windows/lsteamclient.dll to $dst ===" >> "$log" 2>&1 || true
@@ -1020,9 +1070,10 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   bridge_matches=1
   for f in $bridge_files; do
     src="$bridge_src/$f"
-    if [ "$f" = lsteamclient.so ]; then
-      src="$bridge_src/${wine_unix##*/}/$f"
-    fi
+    case "$f" in
+      lsteamclient.dll) src="$bridge_src/${lsteam_rel}$f" ;;
+      lsteamclient.so) src="$bridge_src/${lsteam_rel}${wine_unix##*/}/$f" ;;
+    esac
     if ! cmp -s "$src" "$prefix_steam/$f"; then
       bridge_matches=0
       break
@@ -1034,9 +1085,10 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
     unstaged=0
     for f in $bridge_files; do
       rel="$f"
-      if [ "$f" = lsteamclient.so ]; then
-        rel="${wine_unix##*/}/$f"
-      fi
+      case "$f" in
+        lsteamclient.dll) rel="${lsteam_rel}$f" ;;
+        lsteamclient.so) rel="${lsteam_rel}${wine_unix##*/}/$f" ;;
+      esac
       src="$bridge_src/$rel"
       if [ ! -f "$src" ]; then
         echo "=== bridge missing $f ===" >> "$log" 2>&1 || true
@@ -1277,6 +1329,10 @@ fi
 cat > "$loader_macos/launcher" <<LAUNCHER
 #!/bin/sh
 export WINELOADER="$WINELOADER"
+# sh drops DYLD variables it inherits, so the library path arrives under another name
+if [ -n "\$NOTPROTON_DYLD_FALLBACK" ]; then
+  export DYLD_FALLBACK_LIBRARY_PATH="\$NOTPROTON_DYLD_FALLBACK"
+fi
 wine_log="$loader_root/notproton-wine.log"
 exec > "\$wine_log" 2>&1
 shim="$HOME/Library/Application Support/notproton/overlay-shim.dylib"
@@ -1360,6 +1416,16 @@ for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
 done
+if [ "$runner_kind" = sikarugir ]; then
+  set -- --env SikarugirAppWine11=1 \
+    --env NOTPROTON_DYLD_FALLBACK="$DYLD_FALLBACK_LIBRARY_PATH" "$@"
+  # open hands the bundle only what it is given, and the renderer is chosen by these
+  for name in WINEDLLPATH_PREPEND WINEDLLPATH_DXMT WINEDLLPATH_D3DMETAL WINEDLLPATH_DXVK \
+      CX_APPLEGPT_LIBD3DSHARED_PATH CX_APPLEGPTK_LIBD3DSHARED_PATH VK_DRIVER_FILES; do
+    eval "value=\${$name:-}"
+    [ -n "$value" ] && set -- --env "$name=$value" "$@"
+  done
+fi
 set -- \
   --env CX_ROOT="$CX_ROOT" \
   --env CX_HOME="$CX_HOME" \

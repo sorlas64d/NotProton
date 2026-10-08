@@ -15,6 +15,7 @@ eval "$(python3 resolve.py --sh "$ntdll")"
 CC=i686-w64-mingw32-gcc
 LD=i686-w64-mingw32-ld
 OBJCOPY=i686-w64-mingw32-objcopy
+OBJDUMP=i686-w64-mingw32-objdump
 
 CFLAGS="-Os -fno-asynchronous-unwind-tables -ffreestanding -fno-stack-protector \
 -fno-ident -mno-stack-arg-probe"
@@ -35,6 +36,13 @@ CFLAGS="-Os -fno-asynchronous-unwind-tables -ffreestanding -fno-stack-protector 
   --defsym "NT_OPENFILE=$NP_NT_OPEN_FILE" \
   --defsym "NT_READFILE=$NP_NT_READ_FILE" \
   --defsym "NT_CLOSE=$NP_NT_CLOSE"
+# The patcher writes the payload at NP_PAYLOAD_VA, so a .cave the linker moved would run
+# with every address in it shifted
+cave_vma="$("$OBJDUMP" -h detour32_linked.elf | awk '$2 == ".cave" { print $4 }')"
+if [ -z "$cave_vma" ] || [ "$((0x$cave_vma))" != "$((NP_PAYLOAD_VA))" ]; then
+  echo "error: .cave linked at 0x$cave_vma, the payload goes to $NP_PAYLOAD_VA" >&2
+  exit 1
+fi
 "$OBJCOPY" -O binary -j .cave detour32_linked.elf "$out"
 
 got="$(shasum -a 256 "$out" | cut -d' ' -f1)"

@@ -69,13 +69,15 @@ struct CrossOverRow: Identifiable, Equatable {
             }
         }
 
-        let copies = installed.map(\.id) + damaged
+        // Sikarugir builds have a section of their own.
+        let copies = installed.filter { $0.kind == .crossOver }.map(\.id)
+            + damaged.filter { RunnerKind(buildID: $0) == .crossOver }
         for build in copies where seen.insert(build).inserted {
             rows.append(CrossOverRow(
                 buildID: build, install: nil, copy: copy(of: build), licensed: nil, unsupportedVersion: nil
             ))
         }
-        for build in orphaned where seen.insert(build).inserted {
+        for build in orphaned where RunnerKind(buildID: build) == .crossOver && seen.insert(build).inserted {
             rows.append(CrossOverRow(
                 buildID: build, install: nil, copy: .unsupported, licensed: nil, unsupportedVersion: nil
             ))

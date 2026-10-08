@@ -303,10 +303,18 @@ def amd64_load_path(pe, body, hook):
     # Neither build keeps the argument in rcx. One spills it to the stack right away,
     # the other stashes it in a callee-saved register and reuses that a few instructions
     # later.
-    src, slot, stored_at = 'rcx', None, None
+    # A third build (Sikarugir's wine 11.0) keeps a frame pointer, set up as rbp = rsp+K in
+    # the prologue, and spills the argument off rbp. That slot is rsp+K+disp for as long as
+    # rsp holds still after the lea.
+    src, slot, stored_at, frame, frame_at, rbp_disp = 'rcx', None, None, None, None, None
     for i in body:
         if i.address >= hook:
             break
+        if frame is None and i.mnemonic == 'lea':
+            m = re.fullmatch(r'rbp, \[rsp(?: \+ (0x[0-9a-f]+|\d+))?\]', i.op_str)
+            if m:
+                frame, frame_at = int(m.group(1) or '0', 0), i.address
+                continue
         if i.mnemonic != 'mov' or ',' not in i.op_str:
             continue
         dst, rhs = (x.strip() for x in i.op_str.split(',', 1))
@@ -316,19 +324,36 @@ def amd64_load_path(pe, body, hook):
             slot = 0 if '+' not in dst else int(dst.split('+')[1].strip().rstrip(']'), 16)
             stored_at = i.address
             break
+        m = re.fullmatch(r'qword ptr \[rbp(?: ([-+]) (0x[0-9a-f]+|\d+))?\]', dst)
+        if m and frame is not None:
+            rbp_disp = int(m.group(2) or '0', 0) * (-1 if m.group(1) == '-' else 1)
+            slot, stored_at = frame + rbp_disp, i.address
+            if slot < 0:
+                raise SystemExit(f"{pe.path}: load_path spilled below rsp at {i.address:#x}")
+            break
         if re.fullmatch(r'r[a-z0-9]+', dst):
             src = dst
     if slot is None:
         raise SystemExit(f"{pe.path}: load_path never reaches the frame in build_module")
 
     # The shim reads the slot off rsp, so anything moving rsp in between would shift it, and
-    # a second write to it would mean the slot is reused for something else.
+    # a second write to it would mean the slot is reused for something else. An rbp spill
+    # is only an rsp slot from the lea that fixed rbp, so the check starts there.
+    since = stored_at if rbp_disp is None else frame_at
+    aliases = [f'qword ptr [rsp + {slot:#x}],' if slot else 'qword ptr [rsp],']
+    if rbp_disp is not None:
+        aliases.append(f'qword ptr [rbp {"-" if rbp_disp < 0 else "+"} {abs(rbp_disp):#x}],'
+                       if rbp_disp else 'qword ptr [rbp],')
     for i in body:
-        if not stored_at < i.address < hook:
+        if not since < i.address < hook:
             continue
         if i.mnemonic in ('push', 'pop') or (i.mnemonic in ('sub', 'add') and i.op_str.startswith('rsp,')):
             raise SystemExit(f"{pe.path}: rsp moves at {i.address:#x}, load_path slot not rsp-stable")
-        if i.mnemonic == 'mov' and i.op_str.startswith(f'qword ptr [rsp + {slot:#x}],'):
+        if rbp_disp is not None and i.address > stored_at and i.operands \
+                and i.operands[0].type == X86.X86_OP_REG and i.reg_name(i.operands[0].reg) == 'rbp' \
+                and i.mnemonic not in ('cmp', 'test', 'push'):
+            raise SystemExit(f"{pe.path}: rbp rewritten at {i.address:#x}, load_path slot lost")
+        if i.address > stored_at and i.mnemonic == 'mov' and i.op_str.startswith(tuple(aliases)):
             raise SystemExit(f"{pe.path}: load_path slot rewritten at {i.address:#x}")
     return slot
 

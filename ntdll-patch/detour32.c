@@ -59,6 +59,12 @@ struct io_status { u32 status; u32 information; };
 #define WM_FLAGS(wm)     ( (u32 *)((u8 *)(wm) + 0x34))
 
 #define LDR_DONT_RESOLVE_REFS  0x00000002
+
+// The build_module flags bit that gates fixup_imports, which resolve.py reads off the gate.
+// CrossOver 27 tests this one, CrossOver 26 and stock wine DONT_RESOLVE_DLL_REFERENCES (1).
+#ifndef FLAGS_BIT
+#define FLAGS_BIT LDR_DONT_RESOLVE_REFS
+#endif
 #define LDR_DONT_CALL_DLLMAIN  0x20000000
 
 static const u16 name_lsteam[] = {'l','s','t','e','a','m','c','l','i','e','n','t','.','d','l','l',0};

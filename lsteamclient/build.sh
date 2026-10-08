@@ -40,7 +40,7 @@
 #   ./build.sh --unix          unix half only
 #   ./build.sh --install       also install to the CrossOver tree and bridge
 #
-# Overridable: WINE_BUILD, WINE_SRC_REL, CX_ROOT, BRIDGE_DIR, UNIX_ARCH
+# Overridable: WINE_BUILD, WINE_SRC_REL, CX_ROOT, BRIDGE_DIR, UNIX_ARCH, UNIX_CXXFLAGS
 
 set -eu
 
@@ -157,6 +157,10 @@ if [ "$do_unix" -eq 1 ]; then
 	CXXFLAGS="-arch $UNIX_ARCH -I$dll -I$src -Iinclude -I$WINE_SRC_REL/include \
 -D__WINESRC__ -DSTEAM_API_EXPORTS -Dprivate=public -Dprotected=public -DWINE_UNIX_LIB \
 -fPIC -fasynchronous-unwind-tables -g -O2"
+	# Appended for a tree whose headers need more than the above. Stock 11.0's winbase.h
+	# poisons strncpy and wcsncpy as macros, which mangles the SDK's own declarations
+	# when libc++ reaches them after it, so that tree pre-includes the two headers.
+	CXXFLAGS="$CXXFLAGS ${UNIX_CXXFLAGS:-}"
 
 	built=0
 	for cpp in $objs; do

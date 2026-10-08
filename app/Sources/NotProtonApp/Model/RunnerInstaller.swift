@@ -42,6 +42,121 @@ enum RunnerInstaller {
         return build
     }
 
+    static let sikarugirStep = "Unpack the Sikarugir engine"
+
+    // A Sikarugir runner is the engine archive unpacked, with a copy of the Template's
+    // Frameworks inside it. The engine starts nothing without them, and Sikarugir deletes
+    // a Template when it updates, so the runner cannot point at the one it was made from.
+    static func install(
+        sikarugir engine: SikarugirEngine,
+        frameworks: URL,
+        replacingExisting: Bool = false,
+        runners: URL = SupportPaths.runners
+    ) throws -> RunnerBuild {
+        guard let build = engine.build else {
+            throw StepFailure(
+                step: sikarugirStep,
+                detail: "\(engine.name) is not a supported engine. "
+                    + "Supported: \(SupportedRunners.versionList(of: .sikarugir))."
+            )
+        }
+
+        // Checked again here rather than trusted from discovery, which may be stale.
+        guard Digest.sha256IfPresent(engine.archive) == build.engineArchiveSHA256 else {
+            throw StepFailure(
+                step: sikarugirStep,
+                detail: "\(engine.archive.lastPathComponent) changed since it was checked. Refresh and try again."
+            )
+        }
+
+        let fm = FileManager.default
+        let target = SupportPaths.runnerRoot(forBuild: build.id, runners: runners)
+        let existing = hasClone(forBuild: build.id, runners: runners)
+
+        if !existing || replacingExisting {
+            let staging = target.deletingLastPathComponent()
+                .appending(path: ".\(target.lastPathComponent).new")
+            try? fm.removeItem(at: staging)
+            defer { try? fm.removeItem(at: staging) }
+
+            let unpacked = staging.appending(path: "unpack")
+            try fm.createDirectory(at: unpacked, withIntermediateDirectories: true)
+            let tar = try Shell.run("/usr/bin/tar", [
+                "-xJf", engine.archive.path(percentEncoded: false),
+                "-C", unpacked.path(percentEncoded: false),
+            ])
+            guard tar.status == 0 else {
+                throw StepFailure(
+                    step: sikarugirStep,
+                    detail: "Unpacking \(engine.archive.lastPathComponent) failed. "
+                        + tar.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+
+            let bundle = unpacked.appending(path: "wswine.bundle")
+            guard fm.fileExists(atPath: bundle.appending(path: "lib/wine").path(percentEncoded: false)) else {
+                throw StepFailure(
+                    step: sikarugirStep,
+                    detail: "\(engine.archive.lastPathComponent) holds no wswine.bundle with a lib/wine in it."
+                )
+            }
+
+            let payload = staging.appending(path: RunnerKind.sikarugir.payloadDirectory)
+            try fm.moveItem(at: bundle, to: payload)
+            try copyTree(
+                from: frameworks,
+                to: payload.appending(path: RunnerKind.frameworksDirectory),
+                step: sikarugirStep
+            )
+            // DXVK finds its Vulkan driver through these manifests, which name the driver
+            // relative to themselves as ../../../Frameworks, so they keep the Template's layout.
+            let vulkan = frameworks.deletingLastPathComponent().appending(path: SikarugirSource.vulkanManifests)
+            if fm.fileExists(atPath: vulkan.path(percentEncoded: false)) {
+                let landing = payload.appending(path: SikarugirSource.vulkanManifests)
+                try fm.createDirectory(at: landing.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try copyTree(from: vulkan, to: landing, step: sikarugirStep)
+            }
+            scrubDownloadMarkers(at: payload)
+            try? fm.removeItem(at: unpacked)
+
+            if fm.fileExists(atPath: target.path(percentEncoded: false)) {
+                try fm.removeItem(at: target)
+            }
+            try fm.moveItem(at: staging, to: target)
+        }
+
+        let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        try verifyClone(build: build, root: root)
+        guard RunnerKind.of(root: root) == .sikarugir,
+              fm.fileExists(atPath: root.appending(
+                  path: "\(RunnerKind.frameworksDirectory)/\(SikarugirSource.requiredFramework)"
+              ).path(percentEncoded: false))
+        else {
+            throw StepFailure(
+                step: sikarugirStep,
+                detail: "The runner has no copy of the Template's Frameworks, which the engine needs to start."
+            )
+        }
+
+        return build
+    }
+
+    // APFS clones the tree for free and falls back to a real copy anywhere else.
+    private static func copyTree(from source: URL, to destination: URL, step: String) throws {
+        let from = source.path(percentEncoded: false)
+        let to = destination.path(percentEncoded: false)
+        if try Shell.run("/bin/cp", ["-c", "-R", from, to]).status == 0 { return }
+
+        try? FileManager.default.removeItem(at: destination)
+        let copied = try Shell.run("/bin/cp", ["-R", from, to])
+        guard copied.status == 0 else {
+            throw StepFailure(
+                step: step,
+                detail: "Copying \(from) failed. \(copied.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+    }
+
     static let removeStep = "Remove build"
 
     @discardableResult

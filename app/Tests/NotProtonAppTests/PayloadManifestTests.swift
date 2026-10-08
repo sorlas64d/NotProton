@@ -10,8 +10,11 @@ struct PayloadManifestTests {
     func shippedManifestIsComplete() throws {
         let manifest = try PayloadManifest.bundled()
 
-        #expect(manifest.entries.count == 20)
-        #expect(manifest.paths(origin: .built).count == 7)
+        // Twenty files in the split a working install proved: seven built here, three
+        // patched on device, ten from pinned Valve client packages. Plus four built for the
+        // Sikarugir runner, which only a Sikarugir runner requires.
+        #expect(manifest.entries.count == 24)
+        #expect(manifest.paths(origin: .built).count == 11)
         #expect(manifest.paths(origin: .patched).count == 3)
         #expect(manifest.paths(origin: .valve).count == 10)
 

@@ -43,7 +43,7 @@ enum SupportPaths {
     static var toolList: URL { support.appending(path: "tools") }
 
     static func runnerRoot(forBuild build: String, runners: URL = SupportPaths.runners) -> URL {
-        runners.appending(path: "crossover-\(build)")
+        runners.appending(path: RunnerKind(buildID: build).directoryName(forBuild: build))
     }
 
     static func crossOverRoot(inBundle bundle: URL) -> URL {
@@ -51,7 +51,8 @@ enum SupportPaths {
     }
 
     static func clonedRoot(forBuild build: String, runners: URL = SupportPaths.runners) -> URL {
-        runnerRoot(forBuild: build, runners: runners).appending(path: "CrossOver")
+        runnerRoot(forBuild: build, runners: runners)
+            .appending(path: RunnerKind(buildID: build).payloadDirectory)
     }
 
     static func prefixTemplates(forBuild build: String, in library: SteamLibrary) -> [URL] {

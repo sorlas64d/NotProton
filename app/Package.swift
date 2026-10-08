@@ -38,6 +38,10 @@ let package = Package(
                 .copy("Resources/detour2-fex-41069.bin"),
                 .copy("Resources/detour32-fex-41069.bin"),
                 .copy("Resources/detour64-fex-41069.bin"),
+                .copy("Resources/detour2-sikarugir-11.0-r0.bin"),
+                .copy("Resources/detour32-sikarugir-11.0-r0.bin"),
+                .copy("Resources/detour2-sikarugir-11.0-r1.bin"),
+                .copy("Resources/detour32-sikarugir-11.0-r1.bin"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

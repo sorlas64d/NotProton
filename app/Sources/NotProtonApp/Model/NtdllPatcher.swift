@@ -252,6 +252,76 @@ enum NtdllPatcher {
                 imageBase: 0x1_8000_0000
             ),
         ],
+        // Sikarugir's stock wine 11.0. The i386 gate tests bit 1, DONT_RESOLVE_DLL_REFERENCES,
+        // which the detours were built to set, and its padding is too small for the payload.
+        "sikarugir-11.0-r0": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-sikarugir-11.0-r0",
+                payloadSHA256: "4b1369269dfe41a6d7721fc21360e39217c89e74ce4a066a9371ef194fecc37f",
+                caveRVA: 0x70855,
+                payloadRVA: 0x70860,
+                hooks: [
+                    NtdllHook(rva: 0x34f40,
+                              stolen: [0x48, 0x8b, 0x85, 0x90, 0x00, 0x00, 0x00]),
+                ],
+                caveSize: 1963,
+                cavePad: 0xcc,
+                machine: 0x8664,
+                magic: 0x20b,
+                imageBase: 0x1_7000_0000
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-sikarugir-11.0-r0",
+                payloadSHA256: "5cf54d23db4b32dc7dfacae5e900db1b83b9e783d0615048ea66144d5356f83b",
+                caveRVA: 0x9a000,
+                payloadRVA: 0x9a000,
+                hooks: [
+                    NtdllHook(rva: 0x2eba0, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x01]),
+                ],
+                caveSize: 0x1000,
+                cavePad: 0x00,
+                machine: 0x14c,
+                magic: 0x10b,
+                imageBase: 0x7bc0_0000,
+                placement: .section
+            ),
+        ],
+        "sikarugir-11.0-r1": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-sikarugir-11.0-r1",
+                payloadSHA256: "6f90346e64831d7dccc2dfc815be303aec699fa9c8f68d640b1dd74619d3543f",
+                caveRVA: 0x70485,
+                payloadRVA: 0x70490,
+                hooks: [
+                    NtdllHook(rva: 0x34fc2,
+                              stolen: [0x48, 0x8b, 0x85, 0x90, 0x00, 0x00, 0x00]),
+                ],
+                caveSize: 2939,
+                cavePad: 0xcc,
+                machine: 0x8664,
+                magic: 0x20b,
+                imageBase: 0x1_7000_0000
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-sikarugir-11.0-r1",
+                payloadSHA256: "4c114a80fb1c26fa32134dba02014691e5260bbc8a8091ff280f67f5b21846eb",
+                caveRVA: 0x9a000,
+                payloadRVA: 0x9a000,
+                hooks: [
+                    NtdllHook(rva: 0x2eb00, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x01]),
+                ],
+                caveSize: 0x1000,
+                cavePad: 0x00,
+                machine: 0x14c,
+                magic: 0x10b,
+                imageBase: 0x7bc0_0000,
+                placement: .section
+            ),
+        ],
     ]
 
     static func patches(for build: RunnerBuild) -> [NtdllPatch] {

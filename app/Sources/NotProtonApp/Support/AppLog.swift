@@ -44,6 +44,19 @@ enum AppLog {
             )
         }
 
+        let sikarugir = snapshot.sikarugir
+        if sikarugir.isPresent {
+            lines.append("state sikarugir template=\(sikarugir.frameworks?.path(percentEncoded: false) ?? "none")")
+        }
+        for engine in sikarugir.engines {
+            let support = switch engine.support {
+            case .supported(let build): "supported \(build.id)"
+            case .unsupportedEngine: "unsupported"
+            case .unreadable: "unreadable"
+            }
+            lines.append("state sikarugir \(engine.name) support=\(support)")
+        }
+
         let payload = snapshot.payload
         lines.append(
             "state payload staged=\(payload.present)/\(payload.expected) "

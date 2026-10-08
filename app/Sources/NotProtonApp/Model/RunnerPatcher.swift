@@ -17,16 +17,23 @@ enum RunnerPatcher {
         windowsBuiltins + unixArches(in: root).map { (arch: $0, name: "lsteamclient.so") }
     }
 
+    // Where a build's lsteamclient comes from. Sikarugir's engine is stock wine 11.0 rather
+    // than CrossOver's 11.15, so it gets its own build of the module, kept apart in the bridge.
+    static let sikarugirBridgeDirectory = "sikarugir"
+
+    static func builtinSource(for kind: RunnerKind, in bridge: URL) -> URL {
+        switch kind {
+        case .crossOver: bridge
+        case .sikarugir: bridge.appending(path: sikarugirBridgeDirectory)
+        }
+    }
+
     static func unixArches(in root: URL) -> [String] {
         let arches = unixLoaders(in: root).compactMap { loader in
             loader.pathComponents.last { $0.hasSuffix("-unix") }
         }
         let present = ["aarch64-unix", "x86_64-unix"].filter { arches.contains($0) }
         return present.isEmpty ? ["x86_64-unix"] : present
-    }
-
-    static func unixArch(in root: URL) -> String {
-        unixArches(in: root)[0]
     }
 
     struct Outcome: Sendable {
@@ -42,8 +49,12 @@ enum RunnerPatcher {
     ) throws -> Outcome {
         var outcome = Outcome()
         outcome.ntdll = try installNtdll(build: build, root: root, bridge: bridge)
-        outcome.builtins = try installBuiltins(root: root, bridge: bridge)
-        outcome.loaders = try grantLoaderEntitlement(root: root)
+        outcome.builtins = try installBuiltins(root: root, bridge: builtinSource(for: build.kind, in: bridge))
+        // Sikarugir's loader is ad hoc signed without the hardened runtime, so dyld already
+        // honours the environment and there are no entitlements to extend.
+        if build.kind == .crossOver {
+            outcome.loaders = try grantLoaderEntitlement(root: root)
+        }
         return outcome
     }
 
@@ -71,13 +82,13 @@ enum RunnerPatcher {
             }
 
             let staged = Digest.sha256IfPresent(
-                bridge.appending(path: "\(builtin.arch)/\(builtin.name)"))
+                builtinSource(for: build.kind, in: bridge).appending(path: "\(builtin.arch)/\(builtin.name)"))
             if let staged, staged != installed {
                 wrong.append("\(builtin.arch)/\(builtin.name) is out of date")
             }
         }
 
-        for loader in unixLoaders(in: root) {
+        for loader in unixLoaders(in: root) where build.kind == .crossOver {
             let granted = entitlements(of: loader)
             if granted?.contains(restrictedEntitlement) == true {
                 if !signatureIsValid(signingTarget(for: loader)) {

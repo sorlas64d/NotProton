@@ -76,6 +76,11 @@ enum PayloadInspector {
     }
 
     private static func expand(_ entry: PayloadEntry, for builds: [RunnerBuild]) -> [PayloadEntry] {
+        // The Sikarugir lsteamclient is optional in the app and used only by a Sikarugir
+        // runner, so it is missing only from a bridge one of those needs.
+        if entry.path.hasPrefix("\(RunnerPatcher.sikarugirBridgeDirectory)/") {
+            return builds.contains { $0.kind == .sikarugir } ? [entry] : []
+        }
         guard entry.origin == .patched,
               let arch = WineArch.allCases.first(where: {
                   entry.path == "wine/\($0.rawValue)/ntdll.dll"

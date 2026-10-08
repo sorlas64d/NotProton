@@ -11,6 +11,10 @@ enum BridgePayload {
         // Two different lsteamclient binaries, one 32 bit and one 64 bit.
         let resource: String
         let bridgePaths: [String]
+
+        // Built only where the Sikarugir tree was, by make bridge-sikarugir. An app
+        // without it installs as before and cannot set up a Sikarugir runner.
+        var required = true
     }
 
     static let entries: [Entry] = [
@@ -31,6 +35,18 @@ enum BridgePayload {
         Entry(resource: "i386-windows-lsteamclient.dll", bridgePaths: [
             "i386-windows/lsteamclient.dll",
         ]),
+        // lsteamclient built against Sikarugir's wine 11.0. RunnerPatcher installs it into a
+        // Sikarugir runner and the run script stages it into that runner's prefixes.
+        Entry(resource: "sikarugir-x86_64-windows-lsteamclient.dll", bridgePaths: [
+            "sikarugir/lsteamclient.dll",
+            "sikarugir/x86_64-windows/lsteamclient.dll",
+        ], required: false),
+        Entry(resource: "sikarugir-x86_64-unix-lsteamclient.so", bridgePaths: [
+            "sikarugir/x86_64-unix/lsteamclient.so",
+        ], required: false),
+        Entry(resource: "sikarugir-i386-windows-lsteamclient.dll", bridgePaths: [
+            "sikarugir/i386-windows/lsteamclient.dll",
+        ], required: false),
     ]
 
     struct Located: Sendable {
@@ -59,7 +75,7 @@ enum BridgePayload {
             let url = base.appending(path: entry.resource)
             if files.fileExists(atPath: url.path(percentEncoded: false)) {
                 sources.append((source: url, bridgePaths: entry.bridgePaths))
-            } else {
+            } else if entry.required {
                 missing.append(entry.resource)
             }
         }

@@ -16,7 +16,7 @@
 #   ./fetch-headers.sh            assemble if needed
 #   ./fetch-headers.sh --refetch  discard the cache first
 #
-# Overridable: OPENVR_COMMIT, WINE_COMMIT, CACHE, OUT, LSC_TREE
+# Overridable: OPENVR_COMMIT, PROTON_WINE_COMMIT, CACHE, OUT, LSC_TREE
 
 set -eu
 
@@ -26,7 +26,7 @@ repo=$(cd "$here/.." && pwd)
 # Submodule pins as recorded by Proton at proton_9.0. openvr is ValveSoftware/openvr;
 # the wine submodule url is ../wine relative to Proton, so ValveSoftware/wine.
 OPENVR_COMMIT=${OPENVR_COMMIT:-f51d87ecf8f7903e859b0aa4d617ff1e5f33db5a}
-WINE_COMMIT=${WINE_COMMIT:-015230dc0f78a543032dea0907f6c97304b25ca3}
+PROTON_WINE_COMMIT=${PROTON_WINE_COMMIT:-015230dc0f78a543032dea0907f6c97304b25ca3}
 
 CACHE=${CACHE:-$repo/scratch/proton-headers}
 OUT=${OUT:-$here/proton-headers}
@@ -35,7 +35,7 @@ LSC_TREE=${LSC_TREE:-$repo/build/lsteamclient}
 # repo, commit, path in that repo, destination under OUT, sha256.
 wanted="openvr $OPENVR_COMMIT headers/openvr.h openvr/headers/openvr.h 4f1242febb91d23e1a8317b988dbecec63476603f67458872d3b916cd347df32
 openvr $OPENVR_COMMIT src/ivrclientcore.h openvr/src/ivrclientcore.h 07c8ce981a59fb7cd1dc30572f0c9972d98e6275e95527f0f7a74a18bc0cf846
-wine $WINE_COMMIT include/wine/heap.h wine/include/wine/heap.h e51df7c87744e3cbea4cd03d1e08573205252eb275166c0d01f87340991550e7"
+wine $PROTON_WINE_COMMIT include/wine/heap.h wine/include/wine/heap.h e51df7c87744e3cbea4cd03d1e08573205252eb275166c0d01f87340991550e7"
 
 if [ "${1:-}" = "--refetch" ]; then
 	rm -rf "$CACHE" "$OUT"

@@ -19,6 +19,7 @@ struct StatusSnapshot: Sendable {
     var updateBlocked: Bool
     var crossOver: [CrossOverInstall]
     var crossOverLicense: [String: CrossOverLicense.Status] = [:]
+    var sikarugir: SikarugirInstall = .none
     var runner: RunnerState
     var payload: PayloadState
     var installedRunners: [RunnerBuild] = []
@@ -42,6 +43,7 @@ struct StatusSnapshot: Sendable {
             updateBlocked: UpdateBlock.isPresent(),
             crossOver: installs,
             crossOverLicense: licenses,
+            sikarugir: SikarugirSource.discover(),
             runner: runner,
             payload: PayloadInspector.inspect(builds: installed),
             installedRunners: installed,
@@ -167,6 +169,39 @@ final class SystemStatus {
     }
 
     var setupSource: CrossOverInstall? { repairSource ?? usableCrossOver }
+
+    // MARK: Sikarugir
+
+    var sikarugir: SikarugirInstall { snapshot?.sikarugir ?? .none }
+
+    // The engine of an installed Sikarugir build, so Copy Again unpacks the same one.
+    var sikarugirRepairSource: SikarugirEngine? {
+        let installed = Set((snapshot?.installedRunners ?? []).map(\.id))
+        return sikarugir.usableEngines.first { $0.build.map { installed.contains($0.id) } ?? false }
+    }
+
+    var sikarugirSetupSource: SikarugirEngine? {
+        sikarugir.frameworks == nil ? nil : (sikarugirRepairSource ?? sikarugir.usableEngines.first)
+    }
+
+    func setUpSikarugir(_ engine: SikarugirEngine, replacingExisting: Bool = false) async {
+        guard isIdle else { return }
+        guard let frameworks = sikarugir.frameworks else {
+            setFailure("Sikarugir's Template was not found. Open Sikarugir Creator once to download it.")
+            return
+        }
+        await perform(from: RunnerSetup.Phase.cloning.label) { progress in
+            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
+            defer { close(lock) }
+            try await requireInstallableContent()
+            let result = try await Task.detached(priority: .userInitiated) {
+                try RunnerSetup.run(
+                    sikarugir: engine, frameworks: frameworks, replacingExisting: replacingExisting
+                ) { progress($0.label) }
+            }.value
+            return runnerOutcome(result)
+        }
+    }
 
     func checkLicense(for chosen: CrossOverInstall? = nil) async -> CrossOverLicense.Status? {
         guard let install = chosen ?? usableCrossOver else { return nil }
@@ -418,12 +453,23 @@ final class SystemStatus {
                  license: install.map { CrossOverLicense.check(crossOverRoot: $0.crossOverRoot) })
             }.value
 
+            let sikarugirEngine = sikarugirSetupSource
+            let sikarugirFrameworks = sikarugir.frameworks
             if let install, state.license?.licensed == true, state.runner == .none {
                 progress("Setting up compatibility tool")
                 // A tool that came up is the expected case and goes unsaid. Failure
                 // throws, and an unactivated CrossOver is reported below.
                 _ = try await Task.detached(priority: .userInitiated) {
                     try RunnerSetup.run(from: install) { progress($0.label) }
+                }.value
+            } else if install == nil, state.runner == .none,
+                      let sikarugirEngine, let sikarugirFrameworks {
+                // No CrossOver to set up from, so the tool comes from Sikarugir instead.
+                progress("Setting up compatibility tool")
+                _ = try await Task.detached(priority: .userInitiated) {
+                    try RunnerSetup.run(sikarugir: sikarugirEngine, frameworks: sikarugirFrameworks) {
+                        progress($0.label)
+                    }
                 }.value
             } else if install != nil, state.license?.licensed == false, state.runner == .none {
                 // Not a failure, NotProton was installed but without a compatibility tool

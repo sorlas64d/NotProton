@@ -39,13 +39,19 @@ enum RunnerStore {
         return .unpatched(builds: unpatched, problems: problems)
     }
 
+    // The build a directory under runners/ holds, or nil for anything that is not a runner.
+    // A Sikarugir directory is named by its build id, which carries the prefix already.
+    static func buildIdentifier(inDirectory name: String) -> String? {
+        if name.hasPrefix("crossover-") { return String(name.dropFirst("crossover-".count)) }
+        if name.hasPrefix(RunnerKind.sikarugirPrefix) { return name }
+        return nil
+    }
+
     static func clonedBuilds(in runners: URL = SupportPaths.runners) -> [String] {
         let fm = FileManager.default
         let entries = (try? fm.contentsOfDirectory(at: runners, includingPropertiesForKeys: nil)) ?? []
         return entries
-            .map(\.lastPathComponent)
-            .filter { $0.hasPrefix("crossover-") }
-            .map { String($0.dropFirst("crossover-".count)) }
+            .compactMap { buildIdentifier(inDirectory: $0.lastPathComponent) }
             .sorted()
     }
 
@@ -122,8 +128,7 @@ enum CompatToolList {
         if !rows.isEmpty { return .nobody }
         let link = runners.appending(path: "current").path(percentEncoded: false)
         if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: link),
-           let id = target.split(separator: "/").first(where: { $0.hasPrefix("crossover-") })
-               .map({ String($0.dropFirst("crossover-".count)) }),
+           let id = target.split(separator: "/").compactMap({ RunnerStore.buildIdentifier(inDirectory: String($0)) }).first,
            ids.contains(id), SupportedRunners.legacyHolders.contains(id) {
             return .build(id)
         }

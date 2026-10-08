@@ -1,7 +1,7 @@
-// Allow list of CrossOver builds the runner clones from. The ntdll hook sites
-// are hardcoded RVAs, so a build not pinned here would be patched at the wrong
-// offsets. New builds go in after running ntdll-patch/resolve.py and pinning
-// the hashes.
+// Allow list of the Wine builds a runner is made from: CrossOver bundles, cloned,
+// and Sikarugir engines, unpacked. The ntdll hook sites are hardcoded RVAs, so a
+// build not pinned here would be patched at the wrong offsets. New builds go in
+// after running ntdll-patch/resolve.py and pinning the hashes.
 
 import Foundation
 
@@ -9,6 +9,56 @@ enum WineArch: String, Sendable, CaseIterable {
     case x86_64Windows = "x86_64-windows"
     case i386Windows = "i386-windows"
     case aarch64Windows = "aarch64-windows"
+}
+
+enum RunnerKind: String, Sendable {
+    case crossOver
+    // Sikarugir's engine is stock wine 11.0 and runs only alongside the Frameworks of a
+    // Sikarugir Template, which the runner carries a copy of. Rosetta only.
+    case sikarugir
+
+    // A Sikarugir build's id carries this, so the kind is known from an id or a directory
+    // name alone, including for a runner whose build is no longer pinned.
+    static let sikarugirPrefix = "sikarugir-"
+
+    init(buildID: String) {
+        self = buildID.hasPrefix(Self.sikarugirPrefix) ? .sikarugir : .crossOver
+    }
+
+    // runners/<directory> holds a runner of this kind. CrossOver's prefix predates this
+    // enum and existing runners depend on it.
+    func directoryName(forBuild id: String) -> String {
+        switch self {
+        case .crossOver: "crossover-\(id)"
+        case .sikarugir: id
+        }
+    }
+
+    // The Wine tree inside that directory.
+    var payloadDirectory: String {
+        switch self {
+        case .crossOver: "CrossOver"
+        case .sikarugir: "Engine"
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .crossOver: "CrossOver"
+        case .sikarugir: "Sikarugir"
+        }
+    }
+
+    // Where the Sikarugir runner keeps the Template's Frameworks, and how the run script
+    // and the prefix tools tell the kind of a runner from the tree itself.
+    static let frameworksDirectory = "Frameworks"
+
+    static func of(root: URL) -> RunnerKind {
+        let frameworks = root.appending(path: frameworksDirectory).path(percentEncoded: false)
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: frameworks, isDirectory: &isDirectory)
+            && isDirectory.boolValue ? .sikarugir : .crossOver
+    }
 }
 
 struct RunnerBuild: Sendable, Equatable, Identifiable {
@@ -30,11 +80,22 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
 
     var tools: [CompatTool] = []
 
+    var kind: RunnerKind = .crossOver
+
+    // The engine archive a Sikarugir build is unpacked from, as Sikarugir downloads it into
+    // its Engines folder. Identity for discovery, before anything is unpacked.
+    var engineArchiveSHA256: String? = nil
+
     var id: String { flavor.map { "\(bundleVersion)-\($0)" } ?? bundleVersion }
 
     var flavorName: String { flavor?.uppercased() ?? "Rosetta" }
 
-    var displayVersion: String { "\(releaseVersion) \(flavorName)" }
+    var displayVersion: String {
+        switch kind {
+        case .crossOver: "\(releaseVersion) \(flavorName)"
+        case .sikarugir: "Sikarugir \(releaseVersion)"
+        }
+    }
 }
 
 struct CompatTool: Sendable, Hashable, Identifiable {
@@ -75,7 +136,11 @@ enum SupportedRunners {
     static let legacyToolName = "notproton"
 
     // The only builds that can own the 'notproton' tool name.
-    static let legacyHolders = ["27.0.0.40921-fex", "27.0.0.40921", "27.0.0.41069-fex", "27.0.0.41069"]
+    // 1.0.3.x of this fork could also deploy a Sikarugir engine under that name.
+    static let legacyHolders = [
+        "27.0.0.40921-fex", "27.0.0.40921", "27.0.0.41069-fex", "27.0.0.41069",
+        "sikarugir-11.0-r0", "sikarugir-11.0-r1",
+    ]
 
     enum LegacyHolder: Equatable, Sendable {
         case build(String)
@@ -196,10 +261,60 @@ enum SupportedRunners {
                 CompatTool(name: "notproton-fex-rosetta-41069", flavor: .rosetta, display: "CrossOver 2026 10 06-ARM64 - Rosetta"),
             ]
         ),
+        // Sikarugir's WS12WineSikarugir11.0 engine. Revisions are re-releases of the same
+        // archive name with every binary rebuilt, so each one is pinned separately.
+        RunnerBuild(
+            bundleVersion: "sikarugir-11.0-r0",
+            releaseVersion: "11.0 revision 0",
+            flavor: nil,
+            loaderSHA256: "7fa6d84eb58fcf0f1c319e1abb245651c2317565208d93d72a8626d2292dfa06",
+            cleanNtdll: [
+                .x86_64Windows: "da7e1ea5d7e6bca3192ff5aa4a603302a9572233a1dbe02c9c8d85505101f676",
+                .i386Windows: "e1ce5ae37f57cee3c4fea80b681fbf64e3f0611b36d5c9125851c03dea985589",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "4e0b3d1c21c5a032822503073f8899ce8a29ee33d3779177769b478b603e6992",
+                .i386Windows: "10eae5588b28ae96e7e5144e7444267d46cc2a86999cf4a4d3aa0b10632ff634",
+            ],
+            tools: [
+                CompatTool(name: "notproton-sikarugir-11.0-r0", flavor: .rosetta, display: "Sikarugir 11.0 revision 0"),
+            ],
+            kind: .sikarugir,
+            engineArchiveSHA256: "dcb3de3acab2eaf37591768dc7f6f6c20fa8e6b69c88ddd61e63798c02befcf9"
+        ),
+        RunnerBuild(
+            bundleVersion: "sikarugir-11.0-r1",
+            releaseVersion: "11.0 revision 1",
+            flavor: nil,
+            loaderSHA256: "a5816b9614712097b95bde4bcf62e9f0fa56e3f5a596923808ed16db1c189d6c",
+            cleanNtdll: [
+                .x86_64Windows: "654a39115c3fad3d57716f664a96ddcf580f1e76e852e85a6d7d42017c741ff2",
+                .i386Windows: "ae3ce87f0744ea9180fc91371a2ca5a6ddb5e045e7469480b447c8cd0365c20c",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "d7e478981f854611623b6b4abb10b6874a208cb186ab5ada22d0305d5779062f",
+                .i386Windows: "2b4b4beb0c2c2db3507ae72869b2b2f3573c6998639c1516e5d6022afc01e6c9",
+            ],
+            tools: [
+                CompatTool(name: "notproton-sikarugir-11.0-r1", flavor: .rosetta, display: "Sikarugir 11.0 revision 1"),
+            ],
+            kind: .sikarugir,
+            engineArchiveSHA256: "67e29fb3d74f363af39c69ba11f9b13a79812c5db07cf4748672658e4a200a0e"
+        ),
     ]
 
+    // A CrossOver bundle is identified by its loader. Sikarugir loaders are pinned too but
+    // are never looked up this way, so they cannot pass for a CrossOver build.
     static func build(loaderSHA256 hash: String) -> RunnerBuild? {
-        all.first { $0.loaderSHA256 == hash }
+        all.first { $0.kind == .crossOver && $0.loaderSHA256 == hash }
+    }
+
+    static func build(engineArchiveSHA256 hash: String) -> RunnerBuild? {
+        all.first { $0.kind == .sikarugir && $0.engineArchiveSHA256 == hash }
+    }
+
+    static func builds(of kind: RunnerKind) -> [RunnerBuild] {
+        all.filter { $0.kind == kind }
     }
 
     static func build(id: String) -> RunnerBuild? {
@@ -210,9 +325,11 @@ enum SupportedRunners {
         build(id: id)?.displayVersion ?? id
     }
 
-    static var versionList: String {
+    static var versionList: String { versionList(of: .crossOver) }
+
+    static func versionList(of kind: RunnerKind) -> String {
         var seen = Set<String>()
-        return all.map(\.releaseVersion)
+        return builds(of: kind).map(\.releaseVersion)
             .filter { seen.insert($0).inserted }
             .joined(separator: ", ")
     }

@@ -30,6 +30,9 @@ WINE_BUILD="${WINE_BUILD:-$repo/scratch/wine-build-dual}"
 # i386 is built because a 32 bit game needs the i386 PE halves. freetype and X are
 # off because nothing built here uses either.
 CONFIGURE_OPTS="${CONFIGURE_OPTS:---enable-archs=i386,x86_64 --without-freetype --without-x}"
+# The configure registration for this tree. register-components-11.0.diff is the one for
+# the stock 11.0 tree the Sikarugir runner needs.
+REGISTER_DIFF="${REGISTER_DIFF:-$here/register-components.diff}"
 HOST="${HOST:-x86_64-apple-darwin}"
 # Taken from HOST rather than spelled out twice, since configure normalises it.
 HOST_CPU="${HOST%%-*}"
@@ -69,8 +72,8 @@ echo "==> source tree at pinned $WINE_COMMIT"
 if grep -q 'WINE_CONFIG_MAKEFILE(dlls/lsteamclient)' "$WINE_SRC/configure.ac"; then
     echo "==> components already registered with configure"
 else
-    echo "==> registering dlls/lsteamclient and programs/steam.exe with configure"
-    ( cd "$WINE_SRC" && git apply "$here/register-components.diff" )
+    echo "==> registering components with configure: ${REGISTER_DIFF##*/}"
+    ( cd "$WINE_SRC" && git apply "$REGISTER_DIFF" )
 fi
 
 "$repo/lsteamclient/fetch.sh"

@@ -354,6 +354,12 @@ struct StatusView: View {
                 }
             }
 
+            if snapshot.sikarugir.isPresent || snapshot.installedRunners.contains(where: { $0.kind == .sikarugir }) {
+                Section("Sikarugir") {
+                    sikarugirRows(snapshot)
+                }
+            }
+
             componentsSection(snapshot.payload)
 
             dangerSection
@@ -533,7 +539,8 @@ struct StatusView: View {
             StatusRow(
                 title: "CrossOver",
                 value: "Not found. Supported: \(SupportedRunners.versionList).",
-                tone: .bad
+                // Not a fault for someone running games with Sikarugir instead.
+                tone: snapshot.sikarugir.usableEngines.isEmpty ? .bad : .neutral
             )
         }
         let tools = SupportedRunners.tools(for: snapshot.installedRunners)
@@ -556,7 +563,11 @@ struct StatusView: View {
             .animation(.easeInOut(duration: 0.3), value: status.highlightedRow == row.id)
             .id(row.id)
         }
-        if case .ready = snapshot.runner, !snapshot.payload.missing(origin: .patched).isEmpty {
+        // A Sikarugir build's own row repairs the ntdll it is missing.
+        let crossOverMissing = snapshot.payload.missing(origin: .patched).filter {
+            !$0.path.hasPrefix("wine/\(RunnerKind.sikarugirPrefix)")
+        }
+        if case .ready = snapshot.runner, !crossOverMissing.isEmpty {
             StatusRow(
                 title: "Compatibility Tool",
                 value: "Patched components are missing.",
@@ -569,6 +580,107 @@ struct StatusView: View {
                 ) { Task { await status.requestCompatibilityTool() } }
             )
         }
+    }
+
+    @ViewBuilder
+    private func sikarugirRows(_ snapshot: StatusSnapshot) -> some View {
+        let install = snapshot.sikarugir
+        let unpatched: [String] = {
+            if case .unpatched(let builds, _) = snapshot.runner { return builds }
+            return []
+        }()
+        // A build whose patched ntdll is not staged in the bridge cannot launch anything,
+        // which is what a copy made by an earlier version looks like after an update.
+        let unstaged = Set(snapshot.payload.missing(origin: .patched).compactMap { entry -> String? in
+            let parts = entry.path.split(separator: "/")
+            return parts.count > 1 && parts[0] == "wine" ? String(parts[1]) : nil
+        })
+        if install.frameworks == nil {
+            StatusRow(
+                title: "Sikarugir",
+                value: "Template not found. Open Sikarugir Creator once to download it.",
+                tone: .warning
+            )
+        }
+        ForEach(install.engines) { engine in
+            switch engine.support {
+            case .supported(let build):
+                let installed = snapshot.installedRunners.contains(build)
+                let broken = unpatched.contains(build.id) || snapshot.damagedRunners.contains(build.id)
+                    || (installed && unstaged.contains(build.id))
+                StatusRow(
+                    title: engine.name,
+                    value: "Engine \(build.displayVersion)"
+                        + (broken ? ", copy needs repair" : installed ? "" : ", not set up"),
+                    tone: broken ? .warning : installed ? .ok : (install.frameworks == nil ? .warning : .neutral),
+                    detail: engine.archive.path(percentEncoded: false),
+                    trailing: installed ? buildSize(build.id) : nil,
+                    action: sikarugirAction(for: engine, installed: installed, broken: broken, snapshot: snapshot),
+                    menu: sikarugirMenu(for: engine, build: build, installed: installed, broken: broken)
+                )
+            case .unsupportedEngine:
+                StatusRow(
+                    title: engine.name,
+                    value: "Not supported. Supported: \(SupportedRunners.versionList(of: .sikarugir)).",
+                    tone: .neutral,
+                    detail: engine.archive.path(percentEncoded: false)
+                )
+            case .unreadable:
+                StatusRow(
+                    title: engine.name,
+                    value: "Could not be read.",
+                    tone: .warning,
+                    detail: engine.archive.path(percentEncoded: false)
+                )
+            }
+        }
+        // Copies whose engine archive is gone, which Sikarugir does when it re-releases an engine.
+        let listed = Set(install.engines.compactMap { $0.build?.id })
+        let leftover = (snapshot.installedRunners.map(\.id) + snapshot.damagedRunners + snapshot.orphanedRunners)
+            .filter { RunnerKind(buildID: $0) == .sikarugir && !listed.contains($0) }
+        ForEach(Array(Set(leftover)).sorted(), id: \.self) { id in
+            StatusRow(
+                title: SupportedRunners.displayVersion(forID: id),
+                value: SupportedRunners.build(id: id) == nil
+                    ? "Copy of an engine this version doesn't support."
+                    : "Engine archive not found in Sikarugir's Engines folder.",
+                tone: SupportedRunners.build(id: id) == nil ? .warning : .neutral,
+                trailing: buildSize(id),
+                menu: [removeCopyAction(id, label: "Remove Copy\u{2026}")]
+            )
+        }
+    }
+
+    private func sikarugirAction(
+        for engine: SikarugirEngine, installed: Bool, broken: Bool, snapshot: StatusSnapshot
+    ) -> StatusAction? {
+        guard snapshot.sikarugir.frameworks != nil, !installed || broken else { return nil }
+        return StatusAction(
+            label: broken ? "Repair" : "Set Up",
+            isProminent: broken || snapshot.installedRunners.isEmpty,
+            help: "Set up the compatibility tool from Sikarugir's \(engine.name) engine.",
+            isEnabled: status.canInstall
+        ) {
+            Task { await status.setUpSikarugir(engine, replacingExisting: installed || broken) }
+        }
+    }
+
+    private func sikarugirMenu(
+        for engine: SikarugirEngine, build: RunnerBuild, installed: Bool, broken: Bool
+    ) -> [StatusAction] {
+        guard installed || broken else { return [] }
+        var items: [StatusAction] = []
+        if installed {
+            items.append(StatusAction(
+                label: "Reinstall",
+                help: "Unpack \(engine.name) again.",
+                isEnabled: status.canInstall && status.sikarugir.frameworks != nil
+            ) { Task { await status.setUpSikarugir(engine, replacingExisting: true) } })
+        }
+        var remove = removeCopyAction(build.id, label: "Remove Copy\u{2026}")
+        remove.startsGroup = !items.isEmpty
+        items.append(remove)
+        return items
     }
 
     private func crossOverValue(_ row: CrossOverRow) -> String {

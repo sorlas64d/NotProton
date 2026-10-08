@@ -117,6 +117,13 @@ enum PrefixTools {
         environment["WINEPREFIX"] = prefix.pfx.path(percentEncoded: false)
         environment["WINEMSYNC"] = syncBackend(prefix: prefix)
         environment["PATH"] = "\(root)/bin:" + (environment["PATH"] ?? "/usr/bin:/bin")
+        // As the run script sets them. The engine starts no child process without the first,
+        // and wineserver and the unix modules link against the runner's Frameworks.
+        if RunnerKind.of(root: runner) == .sikarugir {
+            environment["SikarugirAppWine11"] = "1"
+            environment["DYLD_FALLBACK_LIBRARY_PATH"] =
+                "\(root)/\(RunnerKind.frameworksDirectory):/usr/local/lib:/usr/lib"
+        }
         return environment
     }
 

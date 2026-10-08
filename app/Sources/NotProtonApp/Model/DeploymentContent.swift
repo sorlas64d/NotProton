@@ -131,11 +131,15 @@ enum DeploymentContent {
         }
         for build in Set(tools.map(\.build)).sorted() {
             let root = SupportPaths.clonedRoot(forBuild: build, runners: runners)
+            // A Sikarugir runner takes the lsteamclient built for its wine 11.0, which the
+            // bridge keeps in a directory of its own.
+            let source = RunnerKind(buildID: build) == .sikarugir
+                ? "\(RunnerPatcher.sikarugirBridgeDirectory)/" : ""
             for builtin in RunnerPatcher.builtins(in: root) {
                 let path = "\(builtin.arch)/\(builtin.name)"
-                if let entry = bridgePayload.sources.first(where: { $0.bridgePaths.contains(path) }) {
+                if let entry = bridgePayload.sources.first(where: { $0.bridgePaths.contains(source + path) }) {
                     files.append(File(source: entry.source, destination: root.appending(path: "lib/wine/\(path)"),
-                                      name: "crossover-\(build)/\(path)"))
+                                      name: "\(RunnerKind(buildID: build).directoryName(forBuild: build))/\(path)"))
                 }
             }
         }
@@ -175,7 +179,7 @@ enum DeploymentContent {
             for (arch, hash) in build.patchedNtdll {
                 let file = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
                     .appending(path: "lib/wine/\(arch.rawValue)/ntdll.dll")
-                files.append((file, hash, "crossover-\(build.id)/\(arch.rawValue)/ntdll.dll"))
+                files.append((file, hash, "\(build.kind.directoryName(forBuild: build.id))/\(arch.rawValue)/ntdll.dll"))
                 files.append((NtdllPatcher.stagedCopy(of: arch, build: build.id, in: bridge), hash,
                               "bridge/wine/\(build.id)/\(arch.rawValue)/ntdll.dll"))
             }

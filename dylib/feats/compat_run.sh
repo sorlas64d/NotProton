@@ -35,7 +35,17 @@ case "$np_build" in *[!A-Za-z0-9.-]*) np_build="" ;; esac
 np_display=$(sed -n 's/.*"display_name"[[:space:]]*"\(.*\)".*/\1/p' \
   "$np_tool_dir/compatibilitytool.vdf" 2>/dev/null | head -1) || np_display=""
 [ -n "$np_display" ] || np_display="CrossOver build ${np_build:-unknown}"
-CX_ROOT="$np_support/runners/crossover-$np_build/CrossOver"
+# Where the app puts each kind of runner, as RunnerKind.directoryName and payloadDirectory do
+case "$np_build" in
+  sikarugir-*)
+    np_runner_name=Sikarugir
+    CX_ROOT="$np_support/runners/$np_build/Engine"
+    ;;
+  *)
+    np_runner_name=CrossOver
+    CX_ROOT="$np_support/runners/crossover-$np_build/CrossOver"
+    ;;
+esac
 export CX_ROOT
 
 wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
@@ -212,15 +222,17 @@ last_wine_build() {
   [ "$updated" = "$(stat -f %m "$CX_ROOT/share/wine/wine.inf" 2>/dev/null)" ] && return 0
   had_build=other
   had_display="another version of CrossOver"
-  for inf in "$np_support"/runners/crossover-*/CrossOver/share/wine/wine.inf; do
+  for inf in "$np_support"/runners/crossover-*/CrossOver/share/wine/wine.inf \
+    "$np_support"/runners/sikarugir-*/Engine/share/wine/wine.inf; do
     [ "$(stat -f %m "$inf" 2>/dev/null)" = "$updated" ] || continue
     if [ "$had_build" != other ]; then
       had_build=other
       had_display="another version of CrossOver"
       break
     fi
-    had_build=${inf#"$np_support/runners/crossover-"}
+    had_build=${inf#"$np_support/runners/"}
     had_build=${had_build%%/*}
+    had_build=${had_build#crossover-}
     had_display=$(awk -F '\t' -v b="$had_build" '$2 == b { print $4; exit }' \
       "$np_support/tools" 2>/dev/null) || had_display=""
   done
@@ -535,7 +547,7 @@ import_prefix_settings() {
 stage_step="runner check"
 if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
   echo "=== build ${np_build:-(none recorded)} behind this compatibility tool is not set up, set it up in NotProton ===" >> "$log" 2>&1 || true
-  show_alert "CrossOver is not set up" "The CrossOver build behind $(alert_safe "$np_display") is not set up. Set it up in NotProton, or pick another compatibility tool for this game."
+  show_alert "$np_runner_name is not set up" "The $np_runner_name build behind $(alert_safe "$np_display") is not set up. Set it up in NotProton, or pick another compatibility tool for this game."
   exit 1
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
